@@ -80,10 +80,50 @@
 | problem | algorithm | runs | median final | q25 | q75 | evals to 1e-3 (median, solved) | evals to 1e-8 (median, solved) |
 |---|---|---|---|---|---|---|---|
 | rot_ellipsoid_5d | **PBO (original code)** | 5 | 1.0e+02 | 8.6e+00 | 1.5e+02 | – (0/5) | – (0/5) |
-| rot_ellipsoid_10d | **PBO (original code)** | 1 | 1.2e+02 | 1.2e+02 | 1.2e+02 | – (0/1) | – (0/1) |
+| rot_ellipsoid_5d | **PBO+ (full)** | 10 | 8.7e+00 | 3.2e+00 | 2.2e+01 | – (0/10) | – (0/10) |
+| rot_ellipsoid_5d | PBO+ w/o critic | 10 | 5.0e+00 | 3.6e+00 | 3.6e+01 | – (0/10) | – (0/10) |
+| rot_ellipsoid_5d | natural-gradient PBO (xNES) | 10 | 1.0e+02 | 8.4e+01 | 1.5e+02 | – (0/10) | – (0/10) |
+| rot_ellipsoid_5d | CMA-ES (pycma) | 10 | 2.2e+00 | 4.4e-01 | 7.2e+00 | 1137 (2/10) | – (0/10) |
+| rot_ellipsoid_5d | lq-CMA-ES (pycma) | 10 | 4.0e-17 | 1.9e-18 | 8.9e-01 | 667 (7/10) | 667 (7/10) |
+| rot_ellipsoid_10d | **PBO (original code)** | 5 | 1.1e+02 | 6.0e+01 | 1.2e+02 | – (0/5) | – (0/5) |
+| rot_ellipsoid_10d | **PBO+ (full)** | 10 | 1.1e+02 | 3.4e+01 | 1.7e+02 | – (0/10) | – (0/10) |
+| rot_ellipsoid_10d | PBO+ w/o critic | 10 | 1.2e+02 | 4.8e+01 | 3.4e+02 | – (0/10) | – (0/10) |
+| rot_ellipsoid_10d | natural-gradient PBO (xNES) | 10 | 5.0e+02 | 2.8e+02 | 7.8e+02 | – (0/10) | – (0/10) |
+| rot_ellipsoid_10d | CMA-ES (pycma) | 10 | 6.5e+01 | 5.3e+01 | 1.3e+02 | – (0/10) | – (0/10) |
+| rot_ellipsoid_10d | lq-CMA-ES (pycma) | 10 | 6.0e+00 | 1.9e+00 | 1.6e+01 | 2721 (1/10) | 2721 (1/10) |
 | diffpow_8d | **PBO (original code)** | 5 | 9.3e-10 | 2.0e-10 | 1.2e-09 | 484 (5/5) | 1161 (5/5) |
+| diffpow_8d | **PBO+ (full)** | 10 | 4.1e-28 | 2.5e-29 | 5.8e-27 | 169 (10/10) | 424 (9/10) |
+| diffpow_8d | PBO+ w/o critic | 10 | 3.5e-08 | 1.5e-08 | 4.7e-08 | 359 (10/10) | 1358 (1/10) |
+| diffpow_8d | natural-gradient PBO (xNES) | 10 | 6.7e-05 | 2.8e-05 | 7.9e-05 | 1066 (10/10) | – (0/10) |
+| diffpow_8d | CMA-ES (pycma) | 10 | 8.9e-11 | 5.6e-11 | 2.4e-10 | 369 (10/10) | 1086 (10/10) |
+| diffpow_8d | lq-CMA-ES (pycma) | 10 | 1.9e-12 | 1.5e-12 | 3.6e-12 | 152 (10/10) | 447 (10/10) |
 | levy_5d | **PBO (original code)** | 5 | 3.2e-07 | 9.1e-08 | 5.2e-02 | 636 (3/5) | – (0/5) |
+| levy_5d | **PBO+ (full)** | 10 | 2.2e-30 | 2.2e-30 | 2.2e-30 | 218 (8/10) | 246 (8/10) |
+| levy_5d | PBO+ w/o critic | 10 | 5.0e-12 | 2.8e-13 | 1.7e+00 | 427 (7/10) | 818 (7/10) |
+| levy_5d | natural-gradient PBO (xNES) | 10 | 4.9e-05 | 3.8e-05 | 1.2e-04 | 951 (10/10) | – (0/10) |
+| levy_5d | CMA-ES (pycma) | 10 | 8.1e-14 | 2.1e-14 | 6.7e-13 | 433 (8/10) | 811 (8/10) |
+| levy_5d | lq-CMA-ES (pycma) | 10 | 9.0e-02 | 6.6e-15 | 8.2e-01 | 223 (4/10) | 258 (4/10) |
 | styblinski_4d | **PBO (original code)** | 5 | 1.4e+01 | 1.4e+01 | 2.8e+01 | 494 (1/5) | – (0/5) |
+| styblinski_4d | **PBO+ (full)** | 10 | 1.4e+01 | 2.7e+00 | 1.7e+01 | 274 (3/10) | 291 (3/10) |
+| styblinski_4d | PBO+ w/o critic | 10 | 1.4e+01 | 1.4e+01 | 2.8e+01 | 488 (2/10) | 692 (1/10) |
+| styblinski_4d | natural-gradient PBO (xNES) | 10 | 1.2e-02 | 3.1e-03 | 1.3e+01 | 706 (2/10) | – (0/10) |
+| styblinski_4d | CMA-ES (pycma) | 10 | 2.1e+01 | 1.4e+01 | 2.8e+01 | – (0/10) | – (0/10) |
+| styblinski_4d | lq-CMA-ES (pycma) | 10 | 2.8e+01 | 1.4e+01 | 2.8e+01 | 184 (2/10) | 199 (2/10) |
 | ackley_5d | **PBO (original code)** | 5 | 2.5e-04 | 1.0e-04 | 4.5e-04 | 826 (5/5) | – (0/5) |
+| ackley_5d | **PBO+ (full)** | 10 | 1.3e-14 | 7.5e-15 | 1.7e-14 | 216 (10/10) | 410 (10/10) |
+| ackley_5d | PBO+ w/o critic | 10 | 3.9e-07 | 9.5e-08 | 4.9e-07 | 644 (10/10) | – (0/10) |
+| ackley_5d | natural-gradient PBO (xNES) | 10 | 5.8e-03 | 4.8e-03 | 6.9e-03 | – (0/10) | – (0/10) |
+| ackley_5d | CMA-ES (pycma) | 10 | 9.4e-08 | 4.0e-08 | 2.0e-07 | 572 (9/10) | – (0/10) |
+| ackley_5d | lq-CMA-ES (pycma) | 10 | 1.4e-10 | 1.2e-10 | 1.5e-10 | 206 (9/10) | 625 (9/10) |
 | rastrigin_3d | **PBO (original code)** | 5 | 4.9e+00 | 3.5e+00 | 5.0e+00 | – (0/5) | – (0/5) |
+| rastrigin_3d | **PBO+ (full)** | 10 | 2.4e+00 | 2.0e+00 | 4.4e+00 | 736 (1/10) | 747 (1/10) |
+| rastrigin_3d | PBO+ w/o critic | 10 | 4.5e+00 | 2.4e+00 | 5.0e+00 | – (0/10) | – (0/10) |
+| rastrigin_3d | natural-gradient PBO (xNES) | 10 | 2.2e+00 | 2.0e+00 | 2.7e+00 | 695 (1/10) | – (0/10) |
+| rastrigin_3d | CMA-ES (pycma) | 10 | 3.1e+00 | 2.1e+00 | 4.7e+00 | 476 (1/10) | 695 (1/10) |
+| rastrigin_3d | lq-CMA-ES (pycma) | 10 | 3.0e+00 | 1.9e+00 | 6.2e+00 | – (0/10) | – (0/10) |
+| rosenbrock_20d | **PBO+ (full)** | 10 | 3.3e-28 | 3.0e-28 | 3.6e-28 | 5103 (9/10) | 5340 (9/10) |
+| rosenbrock_20d | PBO+ w/o critic | 10 | 5.7e+00 | 4.0e+00 | 6.7e+00 | – (0/10) | – (0/10) |
+| rosenbrock_20d | natural-gradient PBO (xNES) | 10 | 1.7e+01 | 1.6e+01 | 1.7e+01 | – (0/10) | – (0/10) |
+| rosenbrock_20d | CMA-ES (pycma) | 10 | 2.5e+00 | 1.1e+00 | 3.2e+00 | – (0/10) | – (0/10) |
+| rosenbrock_20d | lq-CMA-ES (pycma) | 10 | 3.0e-14 | 2.1e-14 | 3.1e-14 | 5090 (10/10) | 5452 (10/10) |
 

@@ -65,6 +65,13 @@ class AirfoilProblem(Problem):
         super().__init__(name, x_min, x_max, x_0, None, n_ind, n_gen, f_opt=0.0)
         self.task = task
         self.f_opt = None   # unknown optimum
+        # Kink-free map: one slope per variable, a = 0 is the baseline design.
+        # (The piecewise map of the original PBO has a slope discontinuity at a = 0,
+        #  which stalls every covariance-adapting method; see README.)
+        self.scale = np.maximum(self.x_max - self.x_0, self.x_0 - self.x_min)
+
+    def convert(self, a):
+        return np.clip(self.x_0 + self.scale * np.clip(a, -1.0, 1.0), self.x_min, self.x_max)
 
     def info(self, a):
         x = self.convert(np.asarray(a, float))

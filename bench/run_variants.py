@@ -33,6 +33,7 @@ VARIANTS = {
     'xnes':               dict(update='xnes', critic=False),
     'xnes_reuse':         dict(update='xnes', critic=False, reuse=True),
     'pbo+_gp':            dict(update='cma', critic=True, critic_type='gp'),
+    'pbo+_auto':          dict(update='cma', critic=True, critic_type='auto'),
     'turbo':           'turbo',
     'cma-es':          'cma',
     'lq-cma-es':       'lq',
@@ -102,14 +103,20 @@ if __name__ == '__main__':
     ap.add_argument('--cpu', type=int, default=2)
     a = ap.parse_args()
     jobs = [(p, v, s) for p in a.problems.split(',') for v in a.variants.split(',') for s in range(a.seeds)]
+    # Each run is cached in bench/variants/<problem>/runs/<variant>_<seed>.npy as soon as it ends
+    def cache(p, v, s):
+        return os.path.join(ROOT, 'bench', 'variants', p, 'runs', f'{v}_{s}.npy')
+    todo = [j for j in jobs if not os.path.exists(cache(*j))]
     with Pool(a.cpu) as pool:
-        res = pool.map(run_one, jobs, chunksize=1)
+        for j, r in zip(todo, pool.imap(run_one, todo, chunksize=1)):
+            os.makedirs(os.path.dirname(cache(*j)), exist_ok=True)
+            np.save(cache(*j), r)
+            print('finished', *j, f'{r[-1]:.4g}', flush=True)
     out = {}
-    for (p, v, s), r in zip(jobs, res):
-        out.setdefault((p, v), []).append(r)
+    for j in jobs:
+        out.setdefault(j[:2], []).append(np.load(cache(*j)))
     for (p, v), rs in out.items():
         d = os.path.join(ROOT, 'bench', 'variants', p)
-        os.makedirs(d, exist_ok=True)
         np.save(os.path.join(d, v + '.npy'), np.array(rs))
         fin = np.array(rs)[:, -1]
         print(f'{p:18s} {v:16s} median {np.median(fin):.2e}  q25 {np.quantile(fin, .25):.2e}  q75 {np.quantile(fin, .75):.2e}', flush=True)

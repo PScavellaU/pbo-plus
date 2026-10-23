@@ -97,3 +97,60 @@ class GPCritic:
         Zc = np.where(nrm > r, Zc * (r / nrm), Zc)
         mu, sd = self.predict(Zc, return_std=True)
         return Zc[np.argmin(mu - self.beta * sd)]
+
+
+class AutoCritic:
+    """Critic selection: keeps a quadratic and a GP critic and delegates to the one
+    whose recent OUT-OF-SAMPLE rank correlation with the true costs is higher."""
+
+    def __init__(self, dim, quadratic, gp, window=20):
+        self.d = dim
+        self.q, self.g = quadratic, gp
+        self.n_lin, self.n_diag, self.n_full = quadratic.n_lin, quadratic.n_diag, quadratic.n_full
+        self.window = window
+        self.log = []                      # (pred_quadratic, pred_gp, true)
+        self.cur = quadratic
+        self.last_both = None
+
+    def local_size(self, n, model_size, min_pop):
+        self._kq = self.q.local_size(n, model_size, min_pop)
+        return max(self._kq, self.g.local_size(n, model_size, min_pop))
+
+    def fit(self, Z, y, optimize_hyper=True):
+        # Z is sorted by distance to the policy mean: the quadratic uses the nearest points
+        self.q.fit(Z[:self._kq], y[:self._kq])
+        if len(y) >= self.g.d + 3:
+            self.g.fit(Z, y, optimize_hyper=optimize_hyper)
+            self._gp_ok = True
+        else:
+            self._gp_ok = False
+        self._choose()
+        return self
+
+    def _choose(self):
+        from scipy.stats import kendalltau
+        L = np.array(self.log[-self.window:])
+        if not self._gp_ok or len(L) < 6:
+            self.cur = self.q
+            return
+        tq = kendalltau(L[:, 0], L[:, 2])[0]
+        tg = kendalltau(L[:, 1], L[:, 2])[0]
+        tq, tg = (np.nan_to_num(tq, nan=-1.0), np.nan_to_num(tg, nan=-1.0))
+        self.cur = self.g if tg > tq else self.q
+
+    def predict(self, Z, return_std=False):
+        pq = self.q.predict(Z)
+        pg = self.g.predict(Z) if self._gp_ok else pq
+        self.last_both = (pq, pg)
+        return pg if self.cur is self.g else pq
+
+    def record(self, i, y):
+        if self.last_both is not None:
+            self.log.append((self.last_both[0][i], self.last_both[1][i], y))
+
+    @property
+    def kind(self):
+        return 'gp' if self.cur is self.g else self.q.kind
+
+    def __getattr__(self, name):            # coef, argmin_trust, ... of the current critic
+        return getattr(self.__dict__['cur'], name)

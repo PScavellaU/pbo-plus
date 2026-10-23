@@ -49,10 +49,12 @@ class QuadraticCritic:
     and therefore recovers the full covariance of the problem like CMA-ES).
     """
 
-    def __init__(self, dim):
+    def __init__(self, dim, rank_weights=False, max_weight=20.0, truncation=0.75):
         self.d = dim
         self.n_lin, self.n_diag = dim + 1, 2 * dim + 1
         self.n_full = (dim + 1) * (dim + 2) // 2
+        # lq-CMA-ES style: drop the worst points, weight the others linearly by rank
+        self.rank_weights, self.max_weight, self.truncation = rank_weights, max_weight, truncation
 
     def _features(self, z, kind):
         cols = [np.ones(len(z)), *z.T]
@@ -71,8 +73,14 @@ class QuadraticCritic:
             kind = 'diag'
         else:
             kind = 'lin'
-        # Weighted least squares: points near the current mean dominate.
-        w = 1.0 / (1.0 + 0.1 * np.sum(Z ** 2, axis=1))
+        if self.rank_weights:
+            n_dof = {'lin': self.n_lin, 'diag': self.n_diag, 'full': self.n_full}[kind]
+            keep = np.argsort(y)[:max(n_dof + 2, int(self.truncation * (n + 1)))]
+            Z, y = Z[keep], y[keep]
+            w = np.linspace(self.max_weight, 1.0, len(y))
+        else:
+            # Weighted least squares: points near the current mean dominate.
+            w = 1.0 / (1.0 + 0.1 * np.sum(Z ** 2, axis=1))
         F = self._features(Z, kind) * w[:, None]
         coef, *_ = np.linalg.lstsq(F, y * w, rcond=None)
         self.kind, self.coef = kind, coef
@@ -100,7 +108,8 @@ class PBOPlus:
                  mirrored=None, critic=True, reuse=False, restarts=True,
                  seed=None, tau_trust=0.85, tau_bad=0.5, inject=True,
                  incremental=True, pop_factor=1, model_size=1.5, model_min_pop=1,
-                 restart_mode='ipop', stall_gens=None, critic_type='quadratic', gp_beta=0.0):
+                 restart_mode='ipop', stall_gens=None, critic_type='quadratic', gp_beta=0.0,
+                 tau_mode=None, rank_weights=False):
         self.d = dim
         self.rng = np.random.default_rng(seed)
         self.lam0 = lam or 4 + int(3 * np.log(dim))
@@ -125,10 +134,16 @@ class PBOPlus:
         self.pop_factor = pop_factor if critic else 1
         self.reuse = reuse and update == 'xnes'
         self.tau_trust, self.tau_bad = tau_trust, tau_bad
+        # A GP interpolates its data: only out-of-sample rank correlation is informative
+        self.tau_mode = tau_mode or {'quadratic': 'insample', 'gp': 'oos', 'auto': 'dynamic'}[critic_type]
+        self.pred_log = []
         if critic_type == 'gp':
             self.critic = GPCritic(dim, beta=gp_beta)
+        elif critic_type == 'auto':
+            from pboplus.gp import AutoCritic
+            self.critic = AutoCritic(dim, QuadraticCritic(dim, rank_weights), GPCritic(dim, beta=gp_beta))
         else:
-            self.critic = QuadraticCritic(dim)
+            self.critic = QuadraticCritic(dim, rank_weights)
         self.X, self.y = [], []          # archive of true evaluations
         self.n_eval = 0
         self.best_x, self.best_f = None, np.inf
@@ -180,7 +195,7 @@ class PBOPlus:
         Z = self._to_z(X)
         k = min(len(y), self.critic.local_size(n, self.model_size, self.model_min_pop))
         idx = np.argsort(np.sum(Z ** 2, axis=1))[:k]
-        if isinstance(self.critic, GPCriticBase):
+        if isinstance(self.critic, GPCriticBase) or hasattr(self.critic, 'record'):
             # Hyper-parameters once per generation; later refits only update the data
             fresh = getattr(self, '_hyper_gen', None) != (self.n_restarts, self.gen)
             self._hyper_gen = (self.n_restarts, self.gen)
@@ -224,6 +239,9 @@ class PBOPlus:
             todo += rest[:chunk - len(todo)]
             for i in todo[:budget_left]:
                 vals[i] = self._true_eval(Xc[i], f)
+                self.pred_log.append((q[i], vals[i]))   # prediction made before the evaluation
+                if hasattr(self.critic, 'record'):
+                    self.critic.record(i, vals[i])
             budget_left -= len(todo)
             todo = []
             if np.all(~np.isnan(vals)) or budget_left <= 0:
@@ -231,8 +249,14 @@ class PBOPlus:
             X, y = np.asarray(self.X), np.asarray(self.y)
             c = self._fit_local(X, y, n)
             q = c.predict(Zc)
-            n_tau = min(len(y), max(15, n))
-            tau = kendalltau(c.predict(self._to_z(X[-n_tau:])), y[-n_tau:])[0]
+            oos = self.tau_mode == 'oos' or (self.tau_mode == 'dynamic' and c.kind == 'gp')
+            if oos:
+                # Out-of-sample: predictions made before each point was evaluated
+                pl = np.array(self.pred_log[-max(10, n):])
+                tau = kendalltau(pl[:, 0], pl[:, 1])[0] if len(pl) >= 5 else np.nan
+            else:
+                n_tau = min(len(y), max(15, n))
+                tau = kendalltau(c.predict(self._to_z(X[-n_tau:])), y[-n_tau:])[0]
             if np.isfinite(tau) and tau >= self.tau_trust:
                 break
             chunk = int(np.ceil(1.5 * chunk)) if chunk > 1 else 2

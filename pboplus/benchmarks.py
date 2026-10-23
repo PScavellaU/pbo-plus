@@ -131,7 +131,12 @@ def get_dev_multimodal():
         i = np.arange(1, len(x) + 1)
         return float(-np.sum(np.sin(x) * np.sin(i * x ** 2 / pi) ** 20)) + 4.687658179
 
+    rng = np.random.default_rng(777)
+    R6, _ = np.linalg.qr(rng.standard_normal((6, 6)))
+    c6 = 1e5 ** (np.arange(6) / 5)
     return {
+        'dev_ellipsoid_6d': Problem('dev_ellipsoid_6d', [-3] * 6, [1] * 6, [0.5] * 6,
+                                    lambda x: float(np.sum(c6 * (R6 @ (x + 0.7)) ** 2)), 8, 150),
         'schwefel_3d': Problem('schwefel_3d', [-500] * 3, [500] * 3, [100.0] * 3, schwefel, 8, 150),
         'eggholder_2d': Problem('eggholder_2d', [-512] * 2, [512] * 2, [0.0] * 2, eggholder, 6, 150),
         'michalewicz_5d': Problem('michalewicz_5d', [0] * 5, [pi] * 5, [1.5] * 5, michalewicz, 8, 150),
