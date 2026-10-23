@@ -34,6 +34,8 @@ VARIANTS = {
     'xnes_reuse':         dict(update='xnes', critic=False, reuse=True),
     'pbo+_gp':            dict(update='cma', critic=True, critic_type='gp'),
     'pbo+_auto':          dict(update='cma', critic=True, critic_type='auto'),
+    'pbo+_portfolio':     dict(portfolio=True, update='cma', critic=True),
+    'pbo+_gp_portfolio':  dict(portfolio=True, update='cma', critic=True, critic_type='gp'),
     'turbo':           'turbo',
     'cma-es':          'cma',
     'lq-cma-es':       'lq',
@@ -58,6 +60,12 @@ def run_one(args):
     v = VARIANTS[vname]
     # Airfoil boxes are wide w.r.t. good designs: smaller initial spread, same for every method
     sigma0 = SIGMA0_AIRFOIL if pname.startswith('af_') else SIGMA0
+    if isinstance(v, dict) and v.get('portfolio'):
+        from pboplus.portfolio import PortfolioPBO
+        kw = {k: x for k, x in v.items() if k != 'portfolio'}
+        opt = PortfolioPBO(p.dim, lam=p.n_ind, sigma0=kw.pop('sigma0', sigma0), seed=seed, **kw)
+        opt.optimize(p, p.budget)
+        return curve(opt.history, p.budget)
     if isinstance(v, dict):
         kw = dict(v)
         lam = p.n_ind * kw.pop('lam_factor', 1)

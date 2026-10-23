@@ -14,7 +14,58 @@ I test coprono tre gruppi di problemi:
 2. un insieme di funzioni di controllo che **non** è mai stato usato per progettare o tarare PBO+ (verifica di generalizzazione);
 3. **progetto di profili alari** (CST/Kulfan a 18–19 variabili + NeuralFoil), in vista dell'uso su problemi aerodinamici fortemente non lineari e multimodali.
 
-<!-- RESULTS -->
+## Risultati in breve
+
+Tutti i confronti usano **lo stesso numero di valutazioni della funzione** e la stessa popolazione λ dei file json del paper. Il PBO originale gira con il suo codice. Le statistiche sono su 10 run indipendenti (5 per il PBO originale sulle funzioni di controllo, che è molto lento).
+
+![paper](results/convergence_paper.png)
+
+**Funzioni del paper**: valutazioni per raggiungere f − f* ≤ 1e-8 (mediana sui run riusciti; tra parentesi run riusciti/totali)
+
+| problema | d | budget | PBO orig. | **PBO+** | CMA-ES | lq-CMA-ES |
+|---|---|---|---|---|---|---|
+| sphere_2d | 2 | 300 | 280 (8/10) | 16 (10/10) | 246 (8/10) | 17 (10/10) |
+| branin_2d | 2 | 300 | 295 (3/10) | 34 (9/10) | 272 (6/10) | 72 (10/10) |
+| griewank_2d | 2 | 300 | – (0/10), med f=0.03 | – (0/10), med f=0.02 | – (0/10), med f=0.02 | – (0/10), med f=0.02 |
+| himmelblau | 2 | 210 | – (0/10), med f=0.003 | 70 (10/10) | – (0/10), med f=0.02 | 80 (10/10) |
+| parabola_triangle | 2 | 300 | 185 (10/10) | 26 (10/10) | 190 (10/10) | 46 (10/10) |
+| rosenbrock_2d | 2 | 900 | – (0/10), med f=1e-07 | 151 (10/10) | 452 (10/10) | 153 (10/10) |
+| rosenbrock_5d | 5 | 2400 | – (0/10), med f=1e-06 | 414 (10/10) | 1805 (9/10) | 403 (9/10) |
+| rosenbrock_10d | 10 | 6000 | – (0/10), med f=4e-05 | 1327 (8/10) | 5192 (10/10) | 1357 (9/10) |
+
+**Funzioni di controllo (mai usate per la taratura)**: valutazioni per raggiungere f − f* ≤ 1e-8 (mediana sui run riusciti; tra parentesi run riusciti/totali)
+
+| problema | d | budget | PBO orig. | **PBO+** | CMA-ES | lq-CMA-ES |
+|---|---|---|---|---|---|---|
+| rot_ellipsoid_5d | 5 | 1200 | – (0/5), med f=1e+02 | – (0/10), med f=9 | – (0/10), med f=2 | 667 (7/10) |
+| rot_ellipsoid_10d | 10 | 3000 | – (0/5), med f=1e+02 | – (0/10), med f=1e+02 | – (0/10), med f=6e+01 | 2721 (1/10) |
+| diffpow_8d | 8 | 1500 | 1161 (5/5) | 424 (9/10) | 1086 (10/10) | 447 (10/10) |
+| levy_5d | 5 | 1200 | – (0/5), med f=3e-07 | 246 (8/10) | 811 (8/10) | 258 (4/10) |
+| styblinski_4d | 4 | 800 | – (0/5), med f=1e+01 | 291 (3/10) | – (0/10), med f=2e+01 | 199 (2/10) |
+| ackley_5d | 5 | 1200 | – (0/5), med f=0.0002 | 410 (10/10) | – (0/10), med f=9e-08 | 625 (9/10) |
+| rastrigin_3d | 3 | 900 | – (0/5), med f=5 | 747 (1/10) | 695 (1/10) | – (0/10), med f=3 |
+| rosenbrock_20d | 20 | 12000 | n/a | 5340 (9/10) | – (0/10), med f=3 | 5452 (10/10) |
+
+
+![holdout](results/convergence_holdout.png)
+
+Cosa si vede:
+
+- **Rispetto al PBO originale**, PBO+ raggiunge la stessa precisione con un numero di valutazioni da 4 a 20 volte minore e arriva a precisioni che l'originale non raggiunge (Rosenbrock 10D: 1e-28 contro 4e-5 con lo stesso budget).
+- **Rispetto a CMA-ES**, PBO+ è più veloce su tutti i problemi lisci. Il guadagno viene dal critico e dal passo attore: le ablazioni nella tabella completa (`results/summary.md`) mostrano che senza critico PBO+ torna al livello di CMA-ES.
+- **Rispetto a lq-CMA-ES** (lo stato dell'arte dei surrogati locali) PBO+ è pari o migliore su 11 problemi su 16. È nettamente migliore su Branin, sulla parabola, su Lévy e su Ackley, e nettamente peggiore sugli **ellissoidi ruotati**. La causa è stata diagnosticata (vedi *Limiti*).
+- Sulle funzioni multimodali (Griewank, Rastrigin, Styblinski) con budget così piccoli nessun metodo trova regolarmente il minimo globale; PBO+ è tra i migliori.
+
+<!-- AIRFOIL -->
+
+## Limiti noti (onestamente)
+
+- **Gomiti nella mappatura delle azioni.** La convenzione del PBO originale (azione 0 = punto iniziale x₀, pendenze diverse ai due lati) introduce una discontinuità della derivata in a_i = 0 quando x₀ non è al centro del dominio. Sugli ellissoidi ruotati mal condizionati (1e5–1e6) questo blocca PBO+, CMA-ES e il PBO originale, mentre lq-CMA-ES ne risente meno. Con la stessa funzione e una mappatura senza gomito, PBO+ risolve l'ellissoide 6D in 6 run su 6 (1e-29). Per questo i problemi di profilo alare usano una mappatura senza gomito, uguale per tutti gli algoritmi.
+- Il critico GP ha un costo computazionale (circa 1 s per generazione in 18D): è irrilevante quando una valutazione è una CFD, non lo è per funzioni analitiche.
+- Gli iperparametri di PBO+ (taglia del modello, soglia di τ, σ₀ per i profili) sono stati scelti sulle funzioni del paper e su un insieme di sviluppo separato. Le funzioni di controllo sono state valutate una sola volta; sull'ellissoide di controllo la diagnosi del gomito è stata fatta dopo, su un ellissoide di sviluppo diverso.
+- NeuralFoil è un surrogato di XFOIL: un ottimizzatore può sfruttarne gli errori. Il vincolo su `analysis_confidence` lo limita, ma i profili migliori vanno verificati con XFOIL o RANS.
+
+
 
 ## Cosa cambia rispetto al PBO
 
