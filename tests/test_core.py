@@ -45,3 +45,17 @@ def test_gp_nll_gradient():
     g = gp._nll(th, Z, y)[1]
     gn = approx_fprime(th, lambda t: gp._nll(t, Z, y)[0], 1e-6)
     assert np.allclose(g, gn, rtol=1e-3, atol=1e-4)
+
+
+def test_batch_interface_matches_serial():
+    p = get_problems()['himmelblau']
+    a = PBOPlus(p.dim, lam=p.n_ind, sigma0=0.4, seed=3)
+    b = PBOPlus(p.dim, lam=p.n_ind, sigma0=0.4, seed=3)
+    calls = []
+
+    def fb(X):
+        calls.append(len(X))
+        return [p(x) for x in X]
+    fa = a.optimize(p, 150)[1]
+    fbst = b.optimize(fb, 150, batch=True)[1]
+    assert fa == fbst and sum(calls) == 150 and max(calls) > 1

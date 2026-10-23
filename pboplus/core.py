@@ -109,7 +109,7 @@ class PBOPlus:
                  seed=None, tau_trust=0.85, tau_bad=0.5, inject=True,
                  incremental=True, pop_factor=1, model_size=1.5, model_min_pop=1,
                  restart_mode='ipop', stall_gens=None, critic_type='quadratic', gp_beta=0.0,
-                 tau_mode=None, rank_weights=False):
+                 tau_mode=None, rank_weights=False, local_select='nearest', min_batch=1):
         self.d = dim
         self.rng = np.random.default_rng(seed)
         self.lam0 = lam or 4 + int(3 * np.log(dim))
@@ -137,6 +137,8 @@ class PBOPlus:
         # A GP interpolates its data: only out-of-sample rank correlation is informative
         self.tau_mode = tau_mode or {'quadratic': 'insample', 'gp': 'oos', 'auto': 'dynamic'}[critic_type]
         self.pred_log = []
+        self.local_select = local_select
+        self.min_batch, self.batch = max(1, int(min_batch)), False
         if critic_type == 'gp':
             self.critic = GPCritic(dim, beta=gp_beta)
         elif critic_type == 'auto':
@@ -194,7 +196,10 @@ class PBOPlus:
         """Fit the critic on the archive points closest to the policy (Mahalanobis)."""
         Z = self._to_z(X)
         k = min(len(y), self.critic.local_size(n, self.model_size, self.model_min_pop))
-        idx = np.argsort(np.sum(Z ** 2, axis=1))[:k]
+        if self.local_select == 'recent':
+            idx = np.arange(len(y))[::-1][:k]
+        else:
+            idx = np.argsort(np.sum(Z ** 2, axis=1))[:k]
         if isinstance(self.critic, GPCriticBase) or hasattr(self.critic, 'record'):
             # Hyper-parameters once per generation; later refits only update the data
             fresh = getattr(self, '_hyper_gen', None) != (self.n_restarts, self.gen)
@@ -214,8 +219,8 @@ class PBOPlus:
             q = self._fit_local(np.asarray(self.X), np.asarray(self.y), n).predict(self._to_z(Xc))
             order, n_true = np.argsort(q), min(n, max(1, self.n_true))
         todo = list(force) + [i for i in order[:n_true] if i not in force]
-        for i in todo[:max(n_true, len(force))][:budget_left]:
-            vals[i] = self._true_eval(Xc[i], f)
+        idx = todo[:max(n_true, len(force))][:budget_left]
+        vals[idx] = self._eval_many(Xc[idx], f)
         ev = ~np.isnan(vals)
         if not ev.all():
             q = self._fit_local(np.asarray(self.X), np.asarray(self.y), n).predict(self._to_z(Xc))
@@ -233,12 +238,13 @@ class PBOPlus:
         X, y = np.asarray(self.X), np.asarray(self.y)
         q = self._fit_local(X, y, n).predict(Zc)
         todo = list(force)
-        chunk = max(1, len(todo))
+        chunk = max(self.min_batch, len(todo))
         while True:
             rest = [i for i in np.argsort(q) if np.isnan(vals[i]) and i not in todo]
             todo += rest[:chunk - len(todo)]
-            for i in todo[:budget_left]:
-                vals[i] = self._true_eval(Xc[i], f)
+            todo = todo[:budget_left]
+            vals[todo] = self._eval_many(Xc[todo], f)
+            for i in todo:
                 self.pred_log.append((q[i], vals[i]))   # prediction made before the evaluation
                 if hasattr(self.critic, 'record'):
                     self.critic.record(i, vals[i])
@@ -313,8 +319,18 @@ class PBOPlus:
         return z if nz <= r else z * (r / nz)
 
     # ------------------------------------------------------------- main loop
-    def _true_eval(self, x, f):
-        v = float(f(x))
+    def _eval_many(self, Xs, f):
+        """True evaluations of a block of actions: one call with the whole block when
+        the objective is a batch function (parallel CFD runs), else one call each."""
+        if len(Xs) == 0:
+            return np.zeros(0)
+        if self.batch:
+            vs = np.asarray(f(np.asarray(Xs)), float).ravel()
+            return np.array([self._true_eval(x, None, v) for x, v in zip(Xs, vs)])
+        return np.array([self._true_eval(x, f) for x in Xs])
+
+    def _true_eval(self, x, f, v=None):
+        v = float(f(x)) if v is None else float(v)
         self.X.append(x.copy()), self.y.append(v)
         self.n_eval += 1
         if v < self.best_f:
@@ -340,7 +356,7 @@ class PBOPlus:
         if self.use_critic and len(self.y) > 0:
             vals = self._critic_ranks(X, f, budget_left, force=(lam - 1,) if inj is not None else ())
         else:
-            vals = np.array([self._true_eval(x, f) for x in X[:budget_left]])
+            vals = self._eval_many(X[:budget_left], f)
             Z, X_raw = Z[:len(vals)], X_raw[:len(vals)]
         if len(vals) < 2:
             return
@@ -460,7 +476,14 @@ class PBOPlus:
         ev, E = np.linalg.eigh(self.C)
         self.B = E @ np.diag(np.sqrt(np.maximum(ev, 1e-300))) @ E.T
 
-    def optimize(self, f, budget):
+    def optimize(self, f, budget, batch=False):
+        """Minimize f over [-1,1]^d with `budget` true evaluations.
+
+        batch=True: f receives an (n, d) array and returns n costs, so that each
+        block (whole generation, or critic chunk of at least `min_batch` actions)
+        can be evaluated in parallel, e.g. as simultaneous CFD jobs.
+        """
+        self.batch = batch
         while self.n_eval < budget:
             self.step(f, budget - self.n_eval)
         return self.best_x, self.best_f
