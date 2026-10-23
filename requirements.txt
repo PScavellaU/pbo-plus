@@ -1,0 +1,7 @@
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+cma>=3.3       # reference CMA-ES / lq-CMA-ES only
+pytest
+# baseline (original PBO) only:
+# tensorflow>=2.16 tensorflow-probability tf-keras   (run with TF_USE_LEGACY_KERAS=1)

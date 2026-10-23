@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+bench/original/*/results/*/pbo.png
+bench/original/*/*.py
+*.log
