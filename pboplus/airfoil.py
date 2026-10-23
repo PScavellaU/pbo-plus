@@ -117,7 +117,7 @@ def task_mincd_cl(x):
     af = make_airfoil(x[:18])
     v = geometry_violations(af, x[:18], t033_min=0.12)
     a = _aero(af, x[18], 2e6, 0.3)
-    v['CL=0.9'] = abs(a['CL'][0] - 0.9) / 0.9 * 10.0
+    v['CL=0.9'] = max(0.0, abs(a['CL'][0] - 0.9) - 0.01) / 0.9 * 10.0
     v['CM'] = max(0.0, (-0.10 - a['CM'][0]) / 0.10)
     v['confidence'] = max(0.0, (0.90 - a['analysis_confidence'][0]) / 0.90)
     cd = max(a['CD'][0], 1e-5)

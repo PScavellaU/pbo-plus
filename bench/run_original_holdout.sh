@@ -9,10 +9,10 @@ for env in "$@"; do
   cat > $env.py <<PY
 import sys, numpy as np
 sys.path.insert(0, "$ROOT")
-from pboplus.benchmarks import get_holdout_problems
+from pboplus.registry import get
 class $env:
     def __init__(self, path):
-        self.p = get_holdout_problems()["$env"]
+        self.p = get("$env")
         self.name, self.act_size = "$env", self.p.dim
         self.obs_size = self.act_size
         self.obs = np.zeros(self.obs_size)
@@ -26,8 +26,8 @@ PY
   python3 - <<PY
 import json, sys
 sys.path.insert(0, "$ROOT")
-from pboplus.benchmarks import get_holdout_problems
-pr = get_holdout_problems()["$env"]
+from pboplus.registry import get
+pr = get("$env")
 p = json.load(open("$ROOT/baselines/pbo_original/envs/rosenbrock_5d.json"))
 p.update(env_name="$env", n_avg=$N_AVG, n_gen=pr.n_gen, n_ind=pr.n_ind, n_cpu=pr.n_ind, avg_type="linear")
 json.dump(p, open("$env.json", "w"), indent=1)

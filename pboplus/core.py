@@ -31,6 +31,9 @@ import numpy as np
 from scipy.linalg import expm
 from scipy.stats import kendalltau
 
+from pboplus.gp import GPCritic
+GPCriticBase = GPCritic
+
 
 def xnes_utilities(lam):
     r = np.arange(1, lam + 1)
@@ -78,6 +81,9 @@ class QuadraticCritic:
     def predict(self, Z):
         return self._features(Z, self.kind) @ self.coef
 
+    def local_size(self, n, model_size, min_pop):
+        return max(int(model_size * self.n_full), min_pop * n)
+
 
 class PBOPlus:
     """Gaussian policy improved by natural policy gradient steps.
@@ -94,7 +100,7 @@ class PBOPlus:
                  mirrored=None, critic=True, reuse=False, restarts=True,
                  seed=None, tau_trust=0.85, tau_bad=0.5, inject=True,
                  incremental=True, pop_factor=1, model_size=1.5, model_min_pop=1,
-                 restart_mode='ipop', stall_gens=None):
+                 restart_mode='ipop', stall_gens=None, critic_type='quadratic', gp_beta=0.0):
         self.d = dim
         self.rng = np.random.default_rng(seed)
         self.lam0 = lam or 4 + int(3 * np.log(dim))
@@ -119,7 +125,10 @@ class PBOPlus:
         self.pop_factor = pop_factor if critic else 1
         self.reuse = reuse and update == 'xnes'
         self.tau_trust, self.tau_bad = tau_trust, tau_bad
-        self.critic = QuadraticCritic(dim)
+        if critic_type == 'gp':
+            self.critic = GPCritic(dim, beta=gp_beta)
+        else:
+            self.critic = QuadraticCritic(dim)
         self.X, self.y = [], []          # archive of true evaluations
         self.n_eval = 0
         self.best_x, self.best_f = None, np.inf
@@ -169,8 +178,13 @@ class PBOPlus:
     def _fit_local(self, X, y, n):
         """Fit the critic on the archive points closest to the policy (Mahalanobis)."""
         Z = self._to_z(X)
-        k = min(len(y), max(int(self.model_size * self.critic.n_full), self.model_min_pop * n))
+        k = min(len(y), self.critic.local_size(n, self.model_size, self.model_min_pop))
         idx = np.argsort(np.sum(Z ** 2, axis=1))[:k]
+        if isinstance(self.critic, GPCriticBase):
+            # Hyper-parameters once per generation; later refits only update the data
+            fresh = getattr(self, '_hyper_gen', None) != (self.n_restarts, self.gen)
+            self._hyper_gen = (self.n_restarts, self.gen)
+            return self.critic.fit(Z[idx], y[idx], optimize_hyper=fresh)
         return self.critic.fit(Z[idx], y[idx])
 
     def _critic_ranks(self, Xc, f, budget_left, force=()):
@@ -253,6 +267,9 @@ class PBOPlus:
         if len(self.y) < self.critic.n_diag + 2:
             return None
         c = self._fit_local(np.asarray(self.X), np.asarray(self.y), self.lam)
+        if c.kind == 'gp':
+            zb = self._to_z(self.best_x[None])[0] if self.best_x is not None else None
+            return c.argmin_trust(np.sqrt(d) + 2.0, self.rng, zb)
         if c.kind == 'lin':
             return None
         g = c.coef[1:d + 1]

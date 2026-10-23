@@ -1,5 +1,7 @@
 """Compare original PBO with PBO+ variants: convergence plots and a summary table."""
 import os
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")   # one BLAS thread per process: avoids oversubscription
 import sys
 import glob
 import numpy as np
@@ -10,18 +12,20 @@ import matplotlib.pyplot as plt
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from pboplus.benchmarks import get_problems, get_holdout_problems  # noqa: E402
+from pboplus.airfoil import get_airfoil_problems  # noqa: E402
 
 FLOOR = 1e-20
 TARGETS = (1e-3, 1e-8)
-SHOW = ['pbo', 'pbo+', 'pbo+_noinject', 'pbo+_nocritic', 'xnes', 'cma-es', 'lq-cma-es']
+SHOW = ['pbo', 'pbo+', 'pbo+_gp', 'pbo+_noinject', 'pbo+_nocritic', 'xnes', 'cma-es', 'lq-cma-es', 'turbo']
 COLORS = {'pbo': 'k', 'pbo+': 'tab:red', 'pbo+_noinject': 'tab:pink', 'pbo+_noincremental': 'tab:brown',
           'pbo+_nocritic': 'tab:orange', 'xnes': 'tab:green', 'xnes_reuse': 'tab:olive',
-          'cma-es': 'tab:blue', 'lq-cma-es': 'tab:purple'}
+          'cma-es': 'tab:blue', 'lq-cma-es': 'tab:purple', 'pbo+_gp': 'darkred', 'turbo': 'tab:gray'}
 LABELS = {'pbo': 'PBO (original code)', 'pbo+': 'PBO+ (full)', 'pbo+_noinject': 'PBO+ w/o actor step',
           'pbo+_noincremental': 'PBO+ w/o incremental critic', 'pbo+_nocritic': 'PBO+ w/o critic',
           'xnes': 'natural-gradient PBO (xNES)', 'xnes_reuse': 'xNES + IS reuse',
-          'cma-es': 'CMA-ES (pycma)', 'lq-cma-es': 'lq-CMA-ES (pycma)'}
-ORDER = ['pbo', 'pbo+', 'pbo+_noinject', 'pbo+_noincremental', 'pbo+_nocritic', 'xnes', 'xnes_reuse', 'cma-es', 'lq-cma-es']
+          'cma-es': 'CMA-ES (pycma)', 'lq-cma-es': 'lq-CMA-ES (pycma)',
+          'pbo+_gp': 'PBO+ (GP critic)', 'turbo': 'TuRBO-1 (BO)'}
+ORDER = ['pbo', 'pbo+', 'pbo+_gp', 'pbo+_noinject', 'pbo+_noincremental', 'pbo+_nocritic', 'xnes', 'xnes_reuse', 'cma-es', 'lq-cma-es', 'turbo']
 
 
 def load_original(pname, budget):
@@ -58,7 +62,11 @@ def load_suite(P):
     return data
 
 
-def plot_curves(P, data, fname, title):
+AF_YLABEL = {'af_ld_m02_re1e7': 'best L/D (penalized)', 'af_endurance_re3e5': 'best mean CL^1.5/CD (penalized)',
+             'af_mincd_cl09': '−best CD [counts] (penalized)'}
+
+
+def plot_curves(P, data, fname, title, airfoil=False):
     names = list(P)
     nc = 4
     nr = int(np.ceil(len(names) / nc))
@@ -69,16 +77,21 @@ def plot_curves(P, data, fname, title):
         for v in SHOW:
             if v not in data[pname]:
                 continue
-            c = np.maximum(data[pname][v], FLOOR)
+            c = -data[pname][v] if airfoil else np.maximum(data[pname][v], FLOOR)
             x = np.arange(1, c.shape[1] + 1)
             med, q1, q3 = np.median(c, 0), np.quantile(c, .25, 0), np.quantile(c, .75, 0)
             ax.plot(x, med, color=COLORS[v], lw=2.4 if v in ('pbo', 'pbo+') else 1.2,
                     ls='--' if v in ('cma-es', 'lq-cma-es') else '-', label=f'{LABELS[v]} (n={len(c)})')
             ax.fill_between(x, q1, q3, color=COLORS[v], alpha=0.12)
-        ax.set_yscale('log')
+        if airfoil:
+            lo = np.nanmin([np.median(-data[pname][v][:, c.shape[1] // 4]) for v in data[pname]])
+            hi = np.nanmax([np.quantile(-data[pname][v][:, -1], .75) for v in data[pname]])
+            ax.set_ylim(lo, hi + 0.05 * abs(hi - lo))
+        else:
+            ax.set_yscale('log')
         ax.set_title(f'{pname} (d={P[pname].dim}, λ={P[pname].n_ind})', fontsize=10)
         ax.set_xlabel('function evaluations', fontsize=9)
-        ax.set_ylabel('best f − f*  (median, IQR)', fontsize=9)
+        ax.set_ylabel(AF_YLABEL.get(pname, 'best f − f*') + '  (median, IQR)', fontsize=9)
         ax.grid(alpha=.3)
     hl = {}
     for ax in axs.flat:
@@ -152,6 +165,22 @@ def main():
         plot_curves(P, data, f'convergence_{suite}.png', title)
         plot_ecdf(P, data, f'ecdf_{suite}.png', 'Runtime ECDF, targets 1e+2 … 1e-8 — ' + suite)
         out += [f'### {title}', ''] + table(P, data) + ['']
+    P = get_airfoil_problems()
+    data = load_suite(P)
+    if any(data.values()):
+        plot_curves(P, data, 'convergence_airfoil.png', 'Airfoil design (CST + NeuralFoil), 18–19 variables', airfoil=True)
+        out += ['### Airfoil design (performance = −penalized cost; higher is better)', '',
+                '| problem | algorithm | runs | median final | q25 | q75 | best run | worst run | median at 50% budget |',
+                '|---|---|---|---|---|---|---|---|---|']
+        for pname in P:
+            for v in ORDER:
+                if v not in data[pname]:
+                    continue
+                c = -data[pname][v]
+                f, h = c[:, -1], c[:, c.shape[1] // 2]
+                name = f'**{LABELS[v]}**' if v in ('pbo', 'pbo+') else LABELS[v]
+                out.append(f'| {pname} | {name} | {len(c)} | {np.median(f):.2f} | {np.quantile(f, .25):.2f} | {np.quantile(f, .75):.2f} | {f.max():.2f} | {f.min():.2f} | {np.median(h):.2f} |')
+        out.append('')
     open(os.path.join(ROOT, 'results', 'summary.md'), 'w').write('\n'.join(out) + '\n')
     print('\n'.join(out))
 

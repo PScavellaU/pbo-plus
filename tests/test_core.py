@@ -33,3 +33,15 @@ def test_budget_respected_and_solves_rosenbrock():
         _, fb = o.optimize(p, p.budget)
         assert o.n_eval == p.budget
         assert fb < tol
+
+
+def test_gp_nll_gradient():
+    from scipy.optimize import approx_fprime
+    from pboplus.gp import GPCritic
+    rng = np.random.default_rng(1)
+    Z = rng.standard_normal((25, 3)); y = np.sin(Z).sum(1)
+    gp = GPCritic(3)
+    th = np.array([0.1, -0.3, 0.5, 0.2, np.log(1e-3)])
+    g = gp._nll(th, Z, y)[1]
+    gn = approx_fprime(th, lambda t: gp._nll(t, Z, y)[0], 1e-6)
+    assert np.allclose(g, gn, rtol=1e-3, atol=1e-4)

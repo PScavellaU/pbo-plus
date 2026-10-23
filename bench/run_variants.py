@@ -4,6 +4,8 @@ Saves bench/variants/<problem>/<variant>.npy : array (n_seeds, budget) with the
 best cost found after each true function evaluation.
 """
 import os
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")   # one BLAS thread per process: avoids oversubscription
 import sys
 import argparse
 import numpy as np
@@ -16,9 +18,12 @@ from pboplus.benchmarks import get_problems as _paper, get_holdout_problems  # n
 
 
 def get_problems():
-    return {**_paper(), **get_holdout_problems()}
+    from pboplus.airfoil import get_airfoil_problems
+    from pboplus.benchmarks import get_dev_multimodal
+    return {**_paper(), **get_holdout_problems(), **get_dev_multimodal(), **get_airfoil_problems()}
 
 SIGMA0 = 0.4   # ~ initial std of the original PBO (0.85 * sigmoid(.) at init)
+SIGMA0_AIRFOIL = 0.25
 
 VARIANTS = {
     'pbo+':               dict(update='cma', critic=True),
@@ -27,6 +32,8 @@ VARIANTS = {
     'pbo+_nocritic':      dict(update='cma', critic=False),
     'xnes':               dict(update='xnes', critic=False),
     'xnes_reuse':         dict(update='xnes', critic=False, reuse=True),
+    'pbo+_gp':            dict(update='cma', critic=True, critic_type='gp'),
+    'turbo':           'turbo',
     'cma-es':          'cma',
     'lq-cma-es':       'lq',
 }
@@ -48,10 +55,18 @@ def run_one(args):
     pname, vname, seed = args
     p = get_problems()[pname]
     v = VARIANTS[vname]
+    # Airfoil boxes are wide w.r.t. good designs: smaller initial spread, same for every method
+    sigma0 = SIGMA0_AIRFOIL if pname.startswith('af_') else SIGMA0
     if isinstance(v, dict):
         kw = dict(v)
         lam = p.n_ind * kw.pop('lam_factor', 1)
-        opt = PBOPlus(p.dim, lam=lam, sigma0=SIGMA0, seed=seed, **kw)
+        opt = PBOPlus(p.dim, lam=lam, sigma0=kw.pop('sigma0', sigma0), seed=seed, **kw)
+        opt.optimize(p, p.budget)
+        return curve(opt.history, p.budget)
+    if v == 'turbo':
+        sys.path.insert(0, os.path.join(ROOT, 'baselines'))
+        from turbo import TuRBO
+        opt = TuRBO(p.dim, batch=p.n_ind, seed=seed)
         opt.optimize(p, p.budget)
         return curve(opt.history, p.budget)
     import cma
@@ -66,13 +81,13 @@ def run_one(args):
             'maxfevals': p.budget, 'tolfun': 0, 'tolx': 0, 'tolfunhist': 0, 'tolflatfitness': 1e9}
     try:
         if v == 'cma':
-            es = cma.CMAEvolutionStrategy(np.zeros(p.dim), SIGMA0, opts)
+            es = cma.CMAEvolutionStrategy(np.zeros(p.dim), sigma0, opts)
             while len(hist) < p.budget and not es.stop():
                 X = es.ask()
                 es.tell(X, [f(x) for x in X])
         else:
             o = {k: opts[k] for k in ('bounds', 'seed', 'verbose', 'maxfevals', 'popsize')}
-            cma.fmin_lq_surr2(f, np.zeros(p.dim), SIGMA0, options=o)
+            cma.fmin_lq_surr2(f, np.zeros(p.dim), sigma0, options=o)
     except Exception as e:  # budget exhausted inside the library, or stop condition
         if len(hist) < 2:
             raise e

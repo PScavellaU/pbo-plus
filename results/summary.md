@@ -65,7 +65,7 @@
 | rosenbrock_5d | xNES + IS reuse | 10 | 1.0e-08 | 2.1e-09 | 1.4e-07 | 1802 (9/10) | 2321 (5/10) |
 | rosenbrock_5d | CMA-ES (pycma) | 10 | 4.5e-15 | 9.0e-18 | 6.4e-14 | 1452 (9/10) | 1805 (9/10) |
 | rosenbrock_5d | lq-CMA-ES (pycma) | 10 | 5.8e-15 | 4.0e-15 | 8.0e-15 | 362 (9/10) | 403 (9/10) |
-| rosenbrock_10d | **PBO (original code)** | 8 | 4.4e-05 | 2.3e-05 | 8.1e-05 | 4927 (8/8) | – (0/8) |
+| rosenbrock_10d | **PBO (original code)** | 10 | 4.4e-05 | 1.8e-05 | 8.8e-05 | 4892 (9/10) | – (0/10) |
 | rosenbrock_10d | **PBO+ (full)** | 10 | 1.1e-28 | 8.7e-29 | 7.3e-15 | 1247 (8/10) | 1327 (8/10) |
 | rosenbrock_10d | PBO+ w/o actor step | 10 | 1.6e-28 | 1.3e-28 | 2.6e-11 | 1425 (9/10) | 1547 (9/10) |
 | rosenbrock_10d | PBO+ w/o incremental critic | 10 | 1.4e-28 | 1.1e-28 | 1.0e-12 | 2395 (10/10) | 2486 (10/10) |
@@ -79,8 +79,11 @@
 
 | problem | algorithm | runs | median final | q25 | q75 | evals to 1e-3 (median, solved) | evals to 1e-8 (median, solved) |
 |---|---|---|---|---|---|---|---|
+| rot_ellipsoid_5d | **PBO (original code)** | 5 | 1.0e+02 | 8.6e+00 | 1.5e+02 | – (0/5) | – (0/5) |
+| rot_ellipsoid_10d | **PBO (original code)** | 1 | 1.2e+02 | 1.2e+02 | 1.2e+02 | – (0/1) | – (0/1) |
+| diffpow_8d | **PBO (original code)** | 5 | 9.3e-10 | 2.0e-10 | 1.2e-09 | 484 (5/5) | 1161 (5/5) |
 | levy_5d | **PBO (original code)** | 5 | 3.2e-07 | 9.1e-08 | 5.2e-02 | 636 (3/5) | – (0/5) |
 | styblinski_4d | **PBO (original code)** | 5 | 1.4e+01 | 1.4e+01 | 2.8e+01 | 494 (1/5) | – (0/5) |
-| ackley_5d | **PBO (original code)** | 1 | 2.5e-04 | 2.5e-04 | 2.5e-04 | 900 (1/1) | – (0/1) |
+| ackley_5d | **PBO (original code)** | 5 | 2.5e-04 | 1.0e-04 | 4.5e-04 | 826 (5/5) | – (0/5) |
 | rastrigin_3d | **PBO (original code)** | 5 | 4.9e+00 | 3.5e+00 | 5.0e+00 | – (0/5) | – (0/5) |
 
