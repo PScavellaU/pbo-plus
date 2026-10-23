@@ -53,7 +53,7 @@ Cosa si vede:
 
 - **Rispetto al PBO originale**, PBO+ raggiunge la stessa precisione con un numero di valutazioni da 4 a 20 volte minore e arriva a precisioni che l'originale non raggiunge (Rosenbrock 10D: 1e-28 contro 4e-5 con lo stesso budget).
 - **Rispetto a CMA-ES**, PBO+ è più veloce su tutti i problemi lisci. Il guadagno viene dal critico e dal passo attore: le ablazioni nella tabella completa (`results/summary.md`) mostrano che senza critico PBO+ torna al livello di CMA-ES.
-- **Rispetto a lq-CMA-ES** (lo stato dell'arte dei surrogati locali) PBO+ è pari o migliore su 11 problemi su 16. È nettamente migliore su Branin, sulla parabola, su Lévy e su Ackley, e nettamente peggiore sugli **ellissoidi ruotati**. La causa è stata diagnosticata (vedi *Limiti*).
+- **Rispetto a lq-CMA-ES** (lo stato dell'arte dei surrogati locali) PBO+ è pari (entro il rumore fra seed) o migliore su 14 problemi su 16. È nettamente migliore su Branin, sulla parabola, su Lévy e su Ackley, e nettamente peggiore sugli **ellissoidi ruotati**. La causa è stata diagnosticata (vedi *Limiti*).
 - Sulle funzioni multimodali (Griewank, Rastrigin, Styblinski) con budget così piccoli nessun metodo trova regolarmente il minimo globale; PBO+ è tra i migliori.
 
 <!-- AIRFOIL -->
@@ -83,6 +83,9 @@ Il PBO è un gradiente di policy *single-step*: una gaussiana N(μ, Σ), prodott
 | 8 | **critico GP** opzionale (Matérn 5/2, ARD, iperparametri per massima verosimiglianza marginale) | per paesaggi non quadratici, come i profili alari | — |
 | 9 | riflessione ai bordi: la policy ottimizza f∘reflect, quindi il gradiente resta corretto | il PBO originale clippa le azioni in [−1, 1]: questo distorce il gradiente vicino ai bordi | — |
 | 10 | restart (IPOP / BIPOP / restart basati sui bacini con nearest-better clustering dell'archivio) | multimodalità | Auger & Hansen 2005; Hansen 2009; Preuss 2010 |
+| 11 | **separazione costo economico / costoso** (`cheap=`): le penalità note senza solutore (vincoli geometrici) vengono calcolate esattamente su ogni candidato; il critico modella solo la parte aerodinamica, e il passo attore viene accorciato finché resta ammissibile | le penalità del tipo max(0, ·) hanno spigoli che nessun surrogato liscio rappresenta bene; separate, la parte restante è liscia. Sui profili alari è la modifica più efficace | idea dei *known constraints*, Gelbart et al. 2014; screening dei vincoli economici |
+| 12 | **valutazione a batch** (`optimize(f, budget, batch=True)`, `min_batch`): ogni blocco deciso dal critico viene valutato in parallelo | CFD su cluster: si lanciano `min_batch` simulazioni insieme | — |
+| 13 | **portafoglio** di policy con archivio condiviso e successive halving (`pboplus/portfolio.py`) | multimodalità in bassa dimensione: aiuta su Schwefel, Eggholder e Michalewicz; in 18D con 1000 valutazioni invece peggiora, perché dividere il budget costa troppo | Jamieson & Talwalkar 2016 |
 
 Lavori correlati che miglioranti il PBO o le idee vicine, studiati per questo lavoro:
 
@@ -98,7 +101,9 @@ Lavori correlati che miglioranti il PBO o le idee vicine, studiati per questo la
 
 ```
 pboplus/core.py        PBO+ (policy, gradiente naturale, critico, attore, restart)
-pboplus/gp.py          critico GP (Matérn 5/2 ARD)
+pboplus/gp.py          critico GP (Matérn 5/2 ARD) e critico 'auto'
+pboplus/portfolio.py   portafoglio di policy con successive halving
+examples/su2_airfoil_template.py   accoppiamento con SU2 a batch paralleli
 pboplus/benchmarks.py  funzioni del paper + controllo + sviluppo multimodale
 pboplus/airfoil.py     problemi di profilo alare (CST + NeuralFoil)
 baselines/pbo_original PBO originale (patch minima per NumPy 2 / TF 2.21)

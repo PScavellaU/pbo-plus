@@ -16,16 +16,20 @@ from pboplus.airfoil import get_airfoil_problems  # noqa: E402
 
 FLOOR = 1e-20
 TARGETS = (1e-3, 1e-8)
-SHOW = ['pbo', 'pbo+', 'pbo+_gp', 'pbo+_noinject', 'pbo+_nocritic', 'xnes', 'cma-es', 'lq-cma-es', 'turbo']
+SHOW = ['pbo', 'pbo+', 'pbo+_noinject', 'pbo+_nocritic', 'xnes', 'cma-es', 'lq-cma-es']
+SHOW_AF = ['pbo', 'pbo+_cheap', 'pbo+_gp', 'pbo+', 'pbo+_nocritic', 'cma-es', 'cma-es_cheap', 'lq-cma-es', 'turbo']
 COLORS = {'pbo': 'k', 'pbo+': 'tab:red', 'pbo+_noinject': 'tab:pink', 'pbo+_noincremental': 'tab:brown',
           'pbo+_nocritic': 'tab:orange', 'xnes': 'tab:green', 'xnes_reuse': 'tab:olive',
-          'cma-es': 'tab:blue', 'lq-cma-es': 'tab:purple', 'pbo+_gp': 'darkred', 'turbo': 'tab:gray'}
+          'cma-es': 'tab:blue', 'lq-cma-es': 'tab:purple', 'pbo+_gp': 'darkred', 'turbo': 'tab:gray',
+          'pbo+_cheap': 'crimson', 'pbo+_gp_cheap': 'maroon', 'pbo+_auto': 'salmon', 'cma-es_cheap': 'tab:cyan'}
 LABELS = {'pbo': 'PBO (original code)', 'pbo+': 'PBO+ (full)', 'pbo+_noinject': 'PBO+ w/o actor step',
           'pbo+_noincremental': 'PBO+ w/o incremental critic', 'pbo+_nocritic': 'PBO+ w/o critic',
           'xnes': 'natural-gradient PBO (xNES)', 'xnes_reuse': 'xNES + IS reuse',
           'cma-es': 'CMA-ES (pycma)', 'lq-cma-es': 'lq-CMA-ES (pycma)',
-          'pbo+_gp': 'PBO+ (GP critic)', 'turbo': 'TuRBO-1 (BO)'}
-ORDER = ['pbo', 'pbo+', 'pbo+_gp', 'pbo+_noinject', 'pbo+_noincremental', 'pbo+_nocritic', 'xnes', 'xnes_reuse', 'cma-es', 'lq-cma-es', 'turbo']
+          'pbo+_gp': 'PBO+ (GP critic)', 'turbo': 'TuRBO-1 (BO)',
+          'pbo+_cheap': 'PBO+ (cheap-constraint split)', 'pbo+_gp_cheap': 'PBO+ (GP + cheap split)',
+          'pbo+_auto': 'PBO+ (auto critic)', 'cma-es_cheap': 'CMA-ES + geometric pre-screening'}
+ORDER = ['pbo', 'pbo+_cheap', 'pbo+_gp_cheap', 'pbo+', 'pbo+_gp', 'pbo+_auto', 'pbo+_noinject', 'pbo+_noincremental', 'pbo+_nocritic', 'xnes', 'xnes_reuse', 'cma-es', 'cma-es_cheap', 'lq-cma-es', 'turbo']
 
 
 def load_original(pname, budget):
@@ -58,6 +62,14 @@ def load_suite(P):
             v = os.path.basename(f)[:-4]
             if v in COLORS:
                 d[v] = np.load(f)
+        # per-run cache (runs still in progress, or newer than the aggregate)
+        runs = {}
+        for f in sorted(glob.glob(os.path.join(ROOT, 'bench', 'variants', pname, 'runs', '*.npy'))):
+            v = os.path.basename(f)[:-4].rsplit('_', 1)[0]
+            runs.setdefault(v, []).append(np.load(f))
+        for v, rs in runs.items():
+            if v in COLORS and (v not in d or len(rs) > len(d[v])):
+                d[v] = np.array(rs)
         data[pname] = d
     return data
 
@@ -67,27 +79,30 @@ AF_YLABEL = {'af_ld_m02_re1e7': 'best L/D (penalized)', 'af_endurance_re3e5': 'b
 
 
 def plot_curves(P, data, fname, title, airfoil=False):
+    show = SHOW_AF if airfoil else SHOW
     names = list(P)
-    nc = 4
+    nc = min(4, len(names))
     nr = int(np.ceil(len(names) / nc))
-    fig, axs = plt.subplots(nr, nc, figsize=(4.6 * nc, 3.8 * nr), squeeze=False)
+    fig, axs = plt.subplots(nr, nc, figsize=(4.6 * nc + (2 if airfoil else 0), 3.8 * nr + (1.2 if airfoil else 0)),
+                            squeeze=False)
     for ax in axs.flat[len(names):]:
         ax.axis('off')
     for ax, pname in zip(axs.flat, names):
-        for v in SHOW:
+        for v in show:
             if v not in data[pname]:
                 continue
             c = -data[pname][v] if airfoil else np.maximum(data[pname][v], FLOOR)
             x = np.arange(1, c.shape[1] + 1)
             med, q1, q3 = np.median(c, 0), np.quantile(c, .25, 0), np.quantile(c, .75, 0)
-            ax.plot(x, med, color=COLORS[v], lw=2.4 if v in ('pbo', 'pbo+') else 1.2,
+            ax.plot(x, med, color=COLORS[v], lw=2.4 if v in ('pbo', 'pbo+', 'pbo+_cheap') else 1.2,
                     ls='--' if v in ('cma-es', 'lq-cma-es') else '-', label=f'{LABELS[v]} (n={len(c)})')
             ax.fill_between(x, q1, q3, color=COLORS[v], alpha=0.12)
-        if airfoil:
-            lo = np.nanmin([np.median(-data[pname][v][:, c.shape[1] // 4]) for v in data[pname]])
+        if airfoil and data[pname]:
+            B = P[pname].budget
+            lo = np.nanmin([np.median(-data[pname][v][:, B // 4]) for v in data[pname]])
             hi = np.nanmax([np.quantile(-data[pname][v][:, -1], .75) for v in data[pname]])
             ax.set_ylim(lo, hi + 0.05 * abs(hi - lo))
-        else:
+        elif not airfoil:
             ax.set_yscale('log')
         ax.set_title(f'{pname} (d={P[pname].dim}, λ={P[pname].n_ind})', fontsize=10)
         ax.set_xlabel('function evaluations', fontsize=9)
@@ -100,7 +115,7 @@ def plot_curves(P, data, fname, title, airfoil=False):
     if hl:
         fig.legend(list(hl.values()), list(hl), loc='lower center', ncol=min(len(hl), 5), fontsize=9, frameon=False)
     fig.suptitle(title, fontsize=13)
-    fig.tight_layout(rect=(0, 0.07, 1, 0.96))
+    fig.tight_layout(rect=(0, 0.16 if airfoil else 0.07, 1, 0.95))
     fig.savefig(os.path.join(ROOT, 'results', fname), dpi=110)
     plt.close(fig)
 
