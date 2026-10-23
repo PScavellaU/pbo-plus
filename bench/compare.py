@@ -17,12 +17,12 @@ from pboplus.airfoil import get_airfoil_problems  # noqa: E402
 FLOOR = 1e-20
 TARGETS = (1e-3, 1e-8)
 SHOW = ['pbo', 'pbo+', 'pbo+_noinject', 'pbo+_nocritic', 'xnes', 'cma-es', 'lq-cma-es']
-SHOW_AF = ['pbo', 'pbo+_cheap', 'pbo+_gp', 'pbo+', 'pbo+_nocritic', 'cma-es', 'cma-es_cheap', 'lq-cma-es', 'turbo']
+SHOW_AF = ['pbo', 'pbo+_gp_cheap', 'pbo+_cheap', 'pbo+_gp', 'pbo+', 'pbo+_nocritic', 'cma-es', 'cma-es_cheap', 'lq-cma-es', 'turbo']
 COLORS = {'pbo': 'k', 'pbo+': 'tab:red', 'pbo+_noinject': 'tab:pink', 'pbo+_noincremental': 'tab:brown',
           'pbo+_nocritic': 'tab:orange', 'xnes': 'tab:green', 'xnes_reuse': 'tab:olive',
           'cma-es': 'tab:blue', 'lq-cma-es': 'tab:purple', 'pbo+_gp': 'darkred', 'turbo': 'tab:gray',
           'pbo+_cheap': 'crimson', 'pbo+_gp_cheap': 'maroon', 'pbo+_auto': 'salmon', 'cma-es_cheap': 'tab:cyan'}
-LABELS = {'pbo': 'PBO (original code)', 'pbo+': 'PBO+ (full)', 'pbo+_noinject': 'PBO+ w/o actor step',
+LABELS = {'pbo': 'PBO (original code)', 'pbo+': 'PBO+ (quadratic critic, default)', 'pbo+_noinject': 'PBO+ w/o actor step',
           'pbo+_noincremental': 'PBO+ w/o incremental critic', 'pbo+_nocritic': 'PBO+ w/o critic',
           'xnes': 'natural-gradient PBO (xNES)', 'xnes_reuse': 'xNES + IS reuse',
           'cma-es': 'CMA-ES (pycma)', 'lq-cma-es': 'lq-CMA-ES (pycma)',
@@ -94,12 +94,12 @@ def plot_curves(P, data, fname, title, airfoil=False):
             c = -data[pname][v] if airfoil else np.maximum(data[pname][v], FLOOR)
             x = np.arange(1, c.shape[1] + 1)
             med, q1, q3 = np.median(c, 0), np.quantile(c, .25, 0), np.quantile(c, .75, 0)
-            ax.plot(x, med, color=COLORS[v], lw=2.4 if v in ('pbo', 'pbo+', 'pbo+_cheap') else 1.2,
+            ax.plot(x, med, color=COLORS[v], lw=2.4 if v in ('pbo', 'pbo+', 'pbo+_gp_cheap') else 1.2,
                     ls='--' if v in ('cma-es', 'lq-cma-es') else '-', label=f'{LABELS[v]} (n={len(c)})')
             ax.fill_between(x, q1, q3, color=COLORS[v], alpha=0.12)
         if airfoil and data[pname]:
             B = P[pname].budget
-            lo = np.nanmin([np.median(-data[pname][v][:, B // 4]) for v in data[pname]])
+            lo = np.nanmin([np.median(-data[pname][v][:, B // 2]) for v in data[pname] if v != 'pbo'])
             hi = np.nanmax([np.quantile(-data[pname][v][:, -1], .75) for v in data[pname]])
             ax.set_ylim(lo, hi + 0.05 * abs(hi - lo))
         elif not airfoil:

@@ -18,14 +18,17 @@ sys.path.insert(0, os.path.join(ROOT, 'baselines'))
 from pboplus.core import PBOPlus                    # noqa: E402
 from pboplus.airfoil import get_airfoil_problems, make_airfoil  # noqa: E402
 
-ALGOS = {'PBO+ (GP critic)': ('pbo+', dict(critic_type='gp')), 'PBO+ (quadratic critic)': ('pbo+', {}),
+ALGOS = {'PBO+ (cheap split)': ('pbo+', dict(use_cheap=True)), 'PBO+ (GP critic)': ('pbo+', dict(critic_type='gp')),
          'CMA-ES': ('cma', None), 'TuRBO-1': ('turbo', None)}
-COL = {'PBO+ (GP critic)': 'darkred', 'PBO+ (quadratic critic)': 'tab:red', 'CMA-ES': 'tab:blue',
+COL = {'PBO+ (GP critic)': 'darkred', 'PBO+ (cheap split)': 'crimson', 'CMA-ES': 'tab:blue',
        'TuRBO-1': 'tab:gray', 'baseline (≈NACA 4412)': 'k'}
 
 
 def best_design(p, algo, kw, seed):
     if algo == 'pbo+':
+        kw = dict(kw)
+        if kw.pop('use_cheap', False):
+            kw['cheap'] = p.cheap
         o = PBOPlus(p.dim, lam=p.n_ind, sigma0=0.25, seed=seed, **kw)
         return o.optimize(p, p.budget)[0]
     if algo == 'turbo':

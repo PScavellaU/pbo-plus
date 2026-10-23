@@ -56,7 +56,48 @@ Cosa si vede:
 - **Rispetto a lq-CMA-ES** (lo stato dell'arte dei surrogati locali) PBO+ è pari (entro il rumore fra seed) o migliore su 14 problemi su 16. È nettamente migliore su Branin, sulla parabola, su Lévy e su Ackley, e nettamente peggiore sugli **ellissoidi ruotati**. La causa è stata diagnosticata (vedi *Limiti*).
 - Sulle funzioni multimodali (Griewank, Rastrigin, Styblinski) con budget così piccoli nessun metodo trova regolarmente il minimo globale; PBO+ è tra i migliori.
 
-<!-- AIRFOIL -->
+## Profili alari (CST + NeuralFoil, 18–19 variabili, 1008 valutazioni, λ = 12)
+
+Tre problemi, tutti vincolati, costruiti sul modello di ShapeBench:
+
+- `af_ld_m02_re1e7`: massima L/D a α = 5°, Re = 1e7, M = 0.2, con i vincoli di ShapeBench (spessore al 33% e al 90%, angolo del bordo d'uscita, ondulazione, CM, confidenza di NeuralFoil);
+- `af_endurance_re3e5`: massima media di CL^1.5/CD su α ∈ {0, 3, 6, 9}° a Re = 3e5 (bolle di separazione laminare, paesaggio molto non lineare);
+- `af_mincd_cl09`: minima CD a CL = 0.9 (α è una variabile di progetto), Re = 2e6, M = 0.3. Il vincolo di uguaglianza rende l'insieme ammissibile una varietà sottile e curva.
+
+Per tutti gli algoritmi: stessa mappatura delle azioni (senza gomito, azione 0 = profilo base ≈ NACA 4412), stesso σ₀ = 0.25, stesso budget.
+
+![airfoil](results/convergence_airfoil.png)
+
+Mediana su 10 run della prestazione finale (penalizzata; più alto è meglio; per `af_mincd_cl09` è −CD in count):
+
+| algoritmo | L/D (M 0.2, Re 1e7) | endurance (Re 3e5) | −CD a CL = 0.9 |
+|---|---|---|---|
+| PBO originale | 191.0 | 78.8 | −73.5 |
+| CMA-ES | 310.8 | 97.5 | −64.3 |
+| CMA-ES + pre-screening geometrico | 266.6 | 95.7 | −68.4 |
+| lq-CMA-ES | 229.9 | 89.8 | −62.5 |
+| TuRBO-1 (BO) | 240.3 | 96.6 | −72.9 |
+| PBO+ (critico quadratico) | 302.3 | 99.9 | −60.0 |
+| PBO+ (critico GP) | 319.5 | 98.7 | −56.4 |
+| PBO+ (critico quadratico + vincoli economici separati) | **350.2** | **100.6** | −66.1 |
+| **PBO+ (critico GP + vincoli economici separati)** | **349.5** | 99.8 | **−54.9** |
+
+Conclusioni sui profili:
+
+- **PBO+ con critico GP e vincoli economici separati è la configurazione consigliata**: è prima o quasi prima su tutti e tre i problemi. Rispetto al PBO originale guadagna +83% di L/D, +27% di endurance e −25% di resistenza; rispetto a CMA-ES +12% di L/D e −15% di resistenza, a parità di valutazioni.
+- La separazione dei vincoli geometrici (calcolati senza solutore) è il guadagno più grande su L/D: anche il run peggiore su 10 (310) è sopra la mediana di CMA-ES. Dare la stessa informazione a CMA-ES (scartare i candidati non ammissibili) non lo aiuta, anzi lo peggiora: il vantaggio sta nel modo in cui il critico la usa.
+- Il critico GP batte il quadratico quando il vincolo dominante è aerodinamico (CL = 0.9), cioè quando il paesaggio da modellare non è quadratico.
+- TuRBO e lq-CMA-ES, ottimi su altri benchmark, qui sono sotto CMA-ES: in 18D con 1000 valutazioni e vincoli a penalità sono troppo lenti a trovare la regione buona.
+- **Multimodalità.** I migliori profili dei 10 run di PBO+ appartengono alla stessa famiglia ma sono distinti (distanza media 0.26 nello spazio dei parametri, profili con L/D tra 311 e 360): ci sono più bacini con prestazioni vicine. Il portafoglio di policy, utile in bassa dimensione, qui peggiora (dividere 1000 valutazioni in 18D costa troppo). Per spazi più multimodali conviene aumentare il budget e usare `restart_mode='bipop'` o il portafoglio.
+
+![shapes](results/airfoil_shapes.png)
+![multimodality](results/multimodality_af_ld_m02_re1e7.png)
+
+### Uso con SU2
+
+`examples/su2_airfoil_template.py` mostra la catena completa a batch paralleli: PBO+ propone un blocco di design, la geometria non ammissibile viene scartata senza CFD, i design restanti vengono meshati e simulati insieme (comandi `MESH_CMD` e `SOLVE_CMD` da adattare, per esempio Construct2D/c2dx + `sbatch` su ibisco), e i coefficienti vengono letti da `history.csv`. Le simulazioni divergenti ricevono un costo alto: grazie alle utilità di rango non distorcono l'aggiornamento.
+
+
 
 ## Limiti noti (onestamente)
 
