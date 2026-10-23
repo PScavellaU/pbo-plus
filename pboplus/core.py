@@ -109,7 +109,8 @@ class PBOPlus:
                  seed=None, tau_trust=0.85, tau_bad=0.5, inject=True,
                  incremental=True, pop_factor=1, model_size=1.5, model_min_pop=1,
                  restart_mode='ipop', stall_gens=None, critic_type='quadratic', gp_beta=0.0,
-                 tau_mode=None, rank_weights=False, local_select='nearest', min_batch=1):
+                 tau_mode=None, rank_weights=False, local_select='nearest', min_batch=1,
+                 cheap=None):
         self.d = dim
         self.rng = np.random.default_rng(seed)
         self.lam0 = lam or 4 + int(3 * np.log(dim))
@@ -139,6 +140,9 @@ class PBOPlus:
         self.pred_log = []
         self.local_select = local_select
         self.min_batch, self.batch = max(1, int(min_batch)), False
+        # cheap(x): part of the cost that is known without the expensive solver
+        # (e.g. geometric constraint penalties). The critic models only the rest.
+        self.cheap, self.yc = cheap, []
         if critic_type == 'gp':
             self.critic = GPCritic(dim, beta=gp_beta)
         elif critic_type == 'auto':
@@ -216,14 +220,14 @@ class PBOPlus:
         if len(self.y) < self.critic.n_lin + 2:
             order, n_true = np.arange(n), n
         else:
-            q = self._fit_local(np.asarray(self.X), np.asarray(self.y), n).predict(self._to_z(Xc))
+            q = self._fit_local(np.asarray(self.X), self._yt(), n).predict(self._to_z(Xc)) + self._pc(Xc)
             order, n_true = np.argsort(q), min(n, max(1, self.n_true))
         todo = list(force) + [i for i in order[:n_true] if i not in force]
         idx = todo[:max(n_true, len(force))][:budget_left]
         vals[idx] = self._eval_many(Xc[idx], f)
         ev = ~np.isnan(vals)
         if not ev.all():
-            q = self._fit_local(np.asarray(self.X), np.asarray(self.y), n).predict(self._to_z(Xc))
+            q = self._fit_local(np.asarray(self.X), self._yt(), n).predict(self._to_z(Xc)) + self._pc(Xc)
             # Pessimistic offset: a predicted point never beats a verified one by model error
             vals[~ev] = q[~ev] + max(0.0, np.max(vals[ev] - q[ev]))
         self._adapt_n_true(n)
@@ -235,8 +239,9 @@ class PBOPlus:
         n = len(Xc)
         vals = np.full(n, np.nan)
         Zc = self._to_z(Xc)
-        X, y = np.asarray(self.X), np.asarray(self.y)
-        q = self._fit_local(X, y, n).predict(Zc)
+        pc = self._pc(Xc)
+        X = np.asarray(self.X)
+        q = self._fit_local(X, self._yt(), n).predict(Zc) + pc
         todo = list(force)
         chunk = max(self.min_batch, len(todo))
         while True:
@@ -252,9 +257,9 @@ class PBOPlus:
             todo = []
             if np.all(~np.isnan(vals)) or budget_left <= 0:
                 break
-            X, y = np.asarray(self.X), np.asarray(self.y)
-            c = self._fit_local(X, y, n)
-            q = c.predict(Zc)
+            X, y, yc = np.asarray(self.X), np.asarray(self.y), np.asarray(self.yc)
+            c = self._fit_local(X, y - yc, n)
+            q = c.predict(Zc) + pc
             oos = self.tau_mode == 'oos' or (self.tau_mode == 'dynamic' and c.kind == 'gp')
             if oos:
                 # Out-of-sample: predictions made before each point was evaluated
@@ -262,7 +267,7 @@ class PBOPlus:
                 tau = kendalltau(pl[:, 0], pl[:, 1])[0] if len(pl) >= 5 else np.nan
             else:
                 n_tau = min(len(y), max(15, n))
-                tau = kendalltau(c.predict(self._to_z(X[-n_tau:])), y[-n_tau:])[0]
+                tau = kendalltau(c.predict(self._to_z(X[-n_tau:])) + yc[-n_tau:], y[-n_tau:])[0]
             if np.isfinite(tau) and tau >= self.tau_trust:
                 break
             chunk = int(np.ceil(1.5 * chunk)) if chunk > 1 else 2
@@ -276,8 +281,8 @@ class PBOPlus:
         n_val = max(4, self.n_true)
         if len(self.y) < self.critic.n_lin + 2 + n_val:
             return
-        X, y = np.asarray(self.X), np.asarray(self.y)
-        q = self._fit_local(X[:-n_val], y[:-n_val], n).predict(self._to_z(X[-n_val:]))
+        X, y, yt = np.asarray(self.X), np.asarray(self.y), self._yt()
+        q = self._fit_local(X[:-n_val], yt[:-n_val], n).predict(self._to_z(X[-n_val:])) + np.asarray(self.yc)[-n_val:]
         tau = kendalltau(q, y[-n_val:])[0]
         if np.isnan(tau):
             tau = 0.0
@@ -296,10 +301,10 @@ class PBOPlus:
         d = self.d
         if len(self.y) < self.critic.n_diag + 2:
             return None
-        c = self._fit_local(np.asarray(self.X), np.asarray(self.y), self.lam)
+        c = self._fit_local(np.asarray(self.X), self._yt(), self.lam)
         if c.kind == 'gp':
             zb = self._to_z(self.best_x[None])[0] if self.best_x is not None else None
-            return c.argmin_trust(np.sqrt(d) + 2.0, self.rng, zb)
+            return self._cheap_backtrack(c.argmin_trust(np.sqrt(d) + 2.0, self.rng, zb))
         if c.kind == 'lin':
             return None
         g = c.coef[1:d + 1]
@@ -316,7 +321,24 @@ class PBOPlus:
             return None
         r = np.sqrt(d) + 2.0
         nz = np.linalg.norm(z)
-        return z if nz <= r else z * (r / nz)
+        return self._cheap_backtrack(z if nz <= r else z * (r / nz))
+
+    def _cheap_backtrack(self, z):
+        """The critic ignores the cheap part of the cost: shorten the actor step until
+        it is not worse than the policy mean on that part (e.g. stays feasible)."""
+        if self.cheap is None or z is None:
+            return z
+        ref = self.cheap(self._reflect(self.m))
+        for t in (1.0, 0.5, 0.25, 0.125):
+            if self.cheap(self._reflect(self.m + self._A() @ (t * z))) <= ref + 1e-12:
+                return t * z
+        return None
+
+    def _yt(self):
+        return np.asarray(self.y) - np.asarray(self.yc)
+
+    def _pc(self, X):
+        return np.array([self.cheap(x) for x in X]) if self.cheap is not None else 0.0
 
     # ------------------------------------------------------------- main loop
     def _eval_many(self, Xs, f):
@@ -332,6 +354,7 @@ class PBOPlus:
     def _true_eval(self, x, f, v=None):
         v = float(f(x)) if v is None else float(v)
         self.X.append(x.copy()), self.y.append(v)
+        self.yc.append(self.cheap(x) if self.cheap is not None else 0.0)
         self.n_eval += 1
         if v < self.best_f:
             self.best_f, self.best_x = v, x.copy()

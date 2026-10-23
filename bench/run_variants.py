@@ -34,10 +34,13 @@ VARIANTS = {
     'xnes_reuse':         dict(update='xnes', critic=False, reuse=True),
     'pbo+_gp':            dict(update='cma', critic=True, critic_type='gp'),
     'pbo+_auto':          dict(update='cma', critic=True, critic_type='auto'),
+    'pbo+_gp_cheap':      dict(update='cma', critic=True, critic_type='gp', use_cheap=True),
+    'pbo+_cheap':         dict(update='cma', critic=True, use_cheap=True),
     'pbo+_portfolio':     dict(portfolio=True, update='cma', critic=True),
     'pbo+_gp_portfolio':  dict(portfolio=True, update='cma', critic=True, critic_type='gp'),
     'turbo':           'turbo',
     'cma-es':          'cma',
+    'cma-es_cheap':    'cma_cheap',
     'lq-cma-es':       'lq',
 }
 
@@ -68,6 +71,8 @@ def run_one(args):
         return curve(opt.history, p.budget)
     if isinstance(v, dict):
         kw = dict(v)
+        if kw.pop('use_cheap', False):
+            kw['cheap'] = p.cheap
         lam = p.n_ind * kw.pop('lam_factor', 1)
         opt = PBOPlus(p.dim, lam=lam, sigma0=kw.pop('sigma0', sigma0), seed=seed, **kw)
         opt.optimize(p, p.budget)
@@ -94,6 +99,16 @@ def run_one(args):
             while len(hist) < p.budget and not es.stop():
                 X = es.ask()
                 es.tell(X, [f(x) for x in X])
+        elif v == 'cma_cheap':
+            # Same knowledge as PBO+ 'cheap': geometrically infeasible candidates are
+            # not evaluated (no budget) and ranked behind every evaluated one.
+            es = cma.CMAEvolutionStrategy(np.zeros(p.dim), sigma0, opts)
+            while len(hist) < p.budget and not es.stop():
+                X = es.ask()
+                pc = [p.cheap(np.clip(x, -1, 1)) for x in X]
+                vals = [f(x) if c <= 0 else None for x, c in zip(X, pc)]
+                worst = max([v_ for v_ in vals if v_ is not None], default=0.0)
+                es.tell(X, [v_ if v_ is not None else worst + 1.0 + c for v_, c in zip(vals, pc)])
         else:
             o = {k: opts[k] for k in ('bounds', 'seed', 'verbose', 'maxfevals', 'popsize')}
             cma.fmin_lq_surr2(f, np.zeros(p.dim), sigma0, options=o)

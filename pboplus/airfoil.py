@@ -56,7 +56,7 @@ def geometry_violations(af, x, t033_min=0.128, t090_min=0.014, te_min=6.03):
 class AirfoilProblem(Problem):
     PENALTY = 200.0
 
-    def __init__(self, name, task, extra_bounds=None, x0_extra=None, n_ind=12, n_gen=84):
+    def __init__(self, name, task, extra_bounds=None, x0_extra=None, n_ind=12, n_gen=84, geo=None):
         x_min, x_max, x_0 = XMIN, XMAX, X0
         if extra_bounds is not None:
             x_min = np.concatenate([x_min, [b[0] for b in extra_bounds]])
@@ -64,6 +64,7 @@ class AirfoilProblem(Problem):
             x_0 = np.concatenate([x_0, x0_extra])
         super().__init__(name, x_min, x_max, x_0, None, n_ind, n_gen, f_opt=0.0)
         self.task = task
+        self.geo = geo or {}
         self.f_opt = None   # unknown optimum
         # Kink-free map: one slope per variable, a = 0 is the baseline design.
         # (The piecewise map of the original PBO has a slope discontinuity at a = 0,
@@ -81,6 +82,14 @@ class AirfoilProblem(Problem):
             return dict(perf=np.nan, violation=np.inf, feasible=False, cost=1e4)
         tv = float(sum(viol.values()))
         return dict(perf=perf, violation=tv, feasible=tv <= 1e-9, cost=-perf + self.PENALTY * tv, **extra)
+
+    def cheap(self, a):
+        """Geometric part of the penalty: known without any aerodynamic analysis."""
+        x = self.convert(np.asarray(a, float))[:18]
+        try:
+            return self.PENALTY * float(sum(geometry_violations(make_airfoil(x), x, **self.geo).values()))
+        except Exception:
+            return 0.0
 
     def __call__(self, a):
         c = self.info(a)['cost']
@@ -134,6 +143,8 @@ def task_mincd_cl(x):
 def get_airfoil_problems():
     return {
         'af_ld_m02_re1e7': AirfoilProblem('af_ld_m02_re1e7', task_ld_m02_re1e7),
-        'af_endurance_re3e5': AirfoilProblem('af_endurance_re3e5', task_endurance_lowre),
-        'af_mincd_cl09': AirfoilProblem('af_mincd_cl09', task_mincd_cl, extra_bounds=[(-2.0, 10.0)], x0_extra=[2.0]),
+        'af_endurance_re3e5': AirfoilProblem('af_endurance_re3e5', task_endurance_lowre,
+                                             geo=dict(t033_min=0.10, t090_min=0.010)),
+        'af_mincd_cl09': AirfoilProblem('af_mincd_cl09', task_mincd_cl, extra_bounds=[(-2.0, 10.0)], x0_extra=[2.0],
+                                        geo=dict(t033_min=0.12)),
     }
