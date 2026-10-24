@@ -3,3 +3,5 @@ __pycache__/
 bench/original/*/results/*/pbo.png
 bench/original/*/*.py
 *.log
+pbo-plus.zip
+pbo-plus.bundle
