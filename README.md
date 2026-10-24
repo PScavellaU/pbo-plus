@@ -82,9 +82,24 @@ Mediana su 10 run della prestazione finale (penalizzata; più alto è meglio; pe
 | PBO+ (critico quadratico + vincoli economici separati) | **350.2** | **100.6** | −66.1 |
 | **PBO+ (critico GP + vincoli economici separati)** | **349.5** | 99.8 | **−54.9** |
 
+**Solo design strettamente fattibili.** Il costo penalizzato permette di scambiare piccole violazioni con prestazione: il caso tipico è la confidenza di NeuralFoil appena sotto 0.90, dove il surrogato è meno affidabile e la L/D risulta gonfiata. Per questo ho rieseguito i metodi principali registrando ogni design valutato, e ricostruito lo stesso dato dai log del PBO originale. Mediana su 10 run della **migliore prestazione con violazione esattamente nulla**:
+
+| algoritmo | L/D | endurance | −CD [count] a CL = 0.9 |
+|---|---|---|---|
+| PBO originale | 191.0 | 78.6 | -73.5 |
+| CMA-ES | 303.4 | 97.5 | -64.3 |
+| lq-CMA-ES | 229.6 | 89.6 | -62.5 |
+| TuRBO-1 | 239.7 | 96.6 | -72.9 |
+| PBO+ (quadratico) | 299.2 | 99.7 | -59.9 |
+| PBO+ (GP) | 313.8 | 98.7 | -56.4 |
+| PBO+ (quadratico + vincoli separati) | 342.8 | 100.6 | -66.1 |
+| **PBO+ (GP + vincoli separati)** | 345.8 | 99.8 | -54.8 |
+
+La classifica non cambia: i vantaggi di PBO+ non dipendono dallo sfruttamento della penalità.
+
 Conclusioni sui profili:
 
-- **PBO+ con critico GP e vincoli economici separati è la configurazione consigliata**: è prima o quasi prima su tutti e tre i problemi. Rispetto al PBO originale guadagna +83% di L/D, +27% di endurance e −25% di resistenza; rispetto a CMA-ES +12% di L/D e −15% di resistenza, a parità di valutazioni.
+- **PBO+ con critico GP e vincoli economici separati è la configurazione consigliata**: è prima o quasi prima su tutti e tre i problemi. Su design strettamente fattibili guadagna, rispetto al PBO originale, +81% di L/D, +27% di endurance e −25% di resistenza; rispetto a CMA-ES +14% di L/D e −15% di resistenza, a parità di valutazioni.
 - La separazione dei vincoli geometrici (calcolati senza solutore) è il guadagno più grande su L/D: anche il run peggiore su 10 (310) è sopra la mediana di CMA-ES. Dare la stessa informazione a CMA-ES (scartare i candidati non ammissibili) non lo aiuta, anzi lo peggiora: il vantaggio sta nel modo in cui il critico la usa.
 - Il critico GP batte il quadratico quando il vincolo dominante è aerodinamico (CL = 0.9), cioè quando il paesaggio da modellare non è quadratico.
 - TuRBO e lq-CMA-ES, ottimi su altri benchmark, qui sono sotto CMA-ES: in 18D con 1000 valutazioni e vincoli a penalità sono troppo lenti a trovare la regione buona.
@@ -104,7 +119,7 @@ Conclusioni sui profili:
 - **Gomiti nella mappatura delle azioni.** La convenzione del PBO originale (azione 0 = punto iniziale x₀, pendenze diverse ai due lati) introduce una discontinuità della derivata in a_i = 0 quando x₀ non è al centro del dominio. Sugli ellissoidi ruotati mal condizionati (1e5–1e6) questo blocca PBO+, CMA-ES e il PBO originale, mentre lq-CMA-ES ne risente meno. Con la stessa funzione e una mappatura senza gomito, PBO+ risolve l'ellissoide 6D in 6 run su 6 (1e-29). Per questo i problemi di profilo alare usano una mappatura senza gomito, uguale per tutti gli algoritmi.
 - Il critico GP ha un costo computazionale (circa 1 s per generazione in 18D): è irrilevante quando una valutazione è una CFD, non lo è per funzioni analitiche.
 - Gli iperparametri di PBO+ (taglia del modello, soglia di τ, σ₀ per i profili) sono stati scelti sulle funzioni del paper e su un insieme di sviluppo separato. Le funzioni di controllo sono state valutate una sola volta; sull'ellissoide di controllo la diagnosi del gomito è stata fatta dopo, su un ellissoide di sviluppo diverso.
-- NeuralFoil è un surrogato di XFOIL: un ottimizzatore può sfruttarne gli errori. Il vincolo su `analysis_confidence` lo limita, ma i profili migliori vanno verificati con XFOIL o RANS.
+- NeuralFoil è un surrogato di XFOIL: un ottimizzatore può sfruttarne gli errori, e lo fa davvero, spingendosi appena sotto la soglia di `analysis_confidence`. Con un solutore vero conviene trattare la confidenza (o la convergenza della CFD) come vincolo duro, e verificare i profili migliori con XFOIL o RANS.
 
 
 
